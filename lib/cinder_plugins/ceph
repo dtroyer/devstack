@@ -1,0 +1,69 @@
+# lib/cinder_plugins/ceph
+# Configure the ceph driver
+
+# Enable with:
+#
+#   CINDER_DRIVER=ceph
+
+# Dependencies:
+#
+# - ``functions`` file
+# - ``cinder`` configurations
+
+# configure_cinder_driver - make configuration changes, including those to other services
+
+# Save trace setting
+MY_XTRACE=$(set +o | grep xtrace)
+set +o xtrace
+
+
+# Defaults
+# --------
+
+# Set up default directories
+
+
+# Entry Points
+# ------------
+
+# configure_cinder_driver - Set config files, create data dirs, etc
+function configure_cinder_driver {
+    # To use ceph, set the following in localrc:
+    # CINDER_DRIVER=ceph
+    #
+    ## Optional parameters
+    # CINDER_CEPH_POOL=<pool-name>
+    # CINDER_CEPH_USER=<user>
+    # CINDER_CEPH_POOL_PG=<pg-num>
+    # CINDER_CEPH_POOL_PGP=<pgp-num>
+    # CINDER_CEPH_UUID=<uuid>
+    # CINDER_BAK_CEPH_POOL=<pool-name>
+    # CINDER_BAK_CEPH_USER=<user>
+    # CINDER_BAK_CEPH_POOL_PG=<pg-num>
+    # CINDER_BAK_CEPH_POOL_PGP=<pgp-num>
+
+    iniset $CINDER_CONF DEFAULT volume_driver "cinder.volume.drivers.rbd.RBDDriver"
+    iniset $CINDER_CONF DEFAULT rbd_ceph_conf "$CEPH_CONF"
+    iniset $CINDER_CONF DEFAULT rbd_pool "$CINDER_CEPH_POOL"
+    iniset $CINDER_CONF DEFAULT rbd_user "$CINDER_CEPH_USER"
+    iniset $CINDER_CONF DEFAULT rbd_uuid "$CINDER_CEPH_UUID"
+    iniset $CINDER_CONF DEFAULT rbd_flatten_volume_from_snapshot False
+    iniset $CINDER_CONF DEFAULT rbd_max_clone_depth 5
+    iniset $CINDER_CONF DEFAULT glance_api_version 2
+    if is_service_enabled c-bak; then
+        iniset $CINDER_CONF DEFAULT backup_driver "cinder.backup.drivers.ceph"
+        iniset $CINDER_CONF DEFAULT backup_ceph_conf "$CEPH_CONF"
+        iniset $CINDER_CONF DEFAULT backup_ceph_pool "$CINDER_BAK_CEPH_POOL"
+        iniset $CINDER_CONF DEFAULT backup_ceph_user "$CINDER_BAK_CEPH_USER"
+        iniset $CINDER_CONF DEFAULT backup_ceph_stripe_unit 0
+        iniset $CINDER_CONF DEFAULT backup_ceph_stripe_count 0
+        iniset $CINDER_CONF DEFAULT restore_discard_excess_bytes True
+    fi
+}
+
+# Restore xtrace
+$MY_XTRACE
+
+# Local variables:
+# mode: shell-script
+# End:

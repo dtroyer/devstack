@@ -1,0 +1,88 @@
+# lib/storage
+# Interface for interacting with different block storage backends
+
+# Dependencies:
+# ``ENABLED_SERVICES`` must be defined
+
+# ``STORAGE_BACKENDS`` will contain a list of available storage backends
+# after sourcing this file.
+
+# This is a wrapper for the specific storage backends available.
+# Each storage must implement two functions:
+#
+# - install_storage_$STORAGE_TYPE
+# - configure_storage_$STORAGE_TYPE
+#
+# and call register_storage $STORAGE_TYPE
+
+# Save trace setting
+XTRACE=$(set +o | grep xtrace)
+set +o xtrace
+
+
+# Register a storage backend
+#
+#   $1 The name of the storage backend
+#
+# This is required to be defined before the specific storage scripts are sourced
+function register_storage {
+    [ -z "$STORAGE_BACKENDS" ] && STORAGE_BACKENDS=$1 || STORAGE_BACKENDS+=" $1"
+}
+
+# Sourcing the storage libs sets STORAGE_BACKENDS with the available list
+for f in $TOP_DIR/lib/storage_plugins/*; do
+    source $f;
+done
+
+# ``STORAGE_BACKENDS`` now contains a list of the supported storages
+# Look in ``ENABLED_SERVICES`` to see if one has been selected
+for storage in $STORAGE_BACKENDS; do
+    # Set the type for the rest of the backend to use
+    if is_service_enabled $storage; then
+        # Set this now for the rest of the storage functions
+        STORAGE_TYPE=$storage
+    fi
+done
+# If ``STORAGE_TYPE`` is unset here no storage was selected
+# This is not an error as multi-node installs will do this on the compute nodes
+
+
+# Functions
+# ---------
+
+# Get rid of everything enough to cleanly change storage backends
+function cleanup_storage {
+    cleanup_storage_$STORAGE_TYPE
+}
+
+# Set the storage type based on the configuration
+function initialize_storage_backends {
+    for backend in $STORAGE_BACKENDS; do
+        is_service_enabled $backend && STORAGE_TYPE=$backend
+    done
+
+    [ -z "$STORAGE_TYPE" ] && return 1
+
+    return 0
+}
+
+
+# Install the storage
+function install_storage {
+    install_storage_$STORAGE_TYPE
+}
+
+# Configure and start the storage
+function configure_storage {
+    configure_storage_$STORAGE_TYPE
+}
+
+
+
+# Restore xtrace
+$XTRACE
+
+# Tell emacs to use shell-script-mode
+## Local variables:
+## mode: shell-script
+## End:
