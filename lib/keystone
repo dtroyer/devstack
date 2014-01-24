@@ -276,63 +276,51 @@ function configure_keystone() {
 create_keystone_accounts() {
 
     # admin
-    ADMIN_TENANT=$(keystone tenant-create \
-        --name admin \
-        | grep " id " | get_field 2)
-    ADMIN_USER=$(keystone user-create \
-        --name admin \
-        --pass "$ADMIN_PASSWORD" \
-        --email admin@example.com \
-        | grep " id " | get_field 2)
-    ADMIN_ROLE=$(keystone role-create \
-        --name admin \
-        | grep " id " | get_field 2)
-    keystone user-role-add \
-        --user-id $ADMIN_USER \
-        --role-id $ADMIN_ROLE \
-        --tenant-id $ADMIN_TENANT
+    ADMIN_TENANT=admin
+    ADMIN_USER=admin
+    ADMIN_ROLE=admin
+    openstack project create admin
+    openstack user create --project admin --password "$ADMIN_PASSWORD" $ADMIN_USER
+    openstack role create admin
+    openstack role add --project $ADMIN_TENANT --user $ADMIN_USER $ADMIN_ROLE
 
     # service
-    SERVICE_TENANT=$(keystone tenant-create \
-        --name $SERVICE_TENANT_NAME \
-        | grep " id " | get_field 2)
+    openstack project create $SERVICE_TENANT_NAME
 
     # The Member role is used by Horizon and Swift so we need to keep it:
-    MEMBER_ROLE=$(keystone role-create --name=Member | grep " id " | get_field 2)
+    MEMBER_ROLE=Member
+    openstack role create $MEMBER_ROLE
+
     # ANOTHER_ROLE demonstrates that an arbitrary role may be created and used
     # TODO(sleepsonthefloor): show how this can be used for rbac in the future!
-    ANOTHER_ROLE=$(keystone role-create --name=anotherrole | grep " id " | get_field 2)
+    ANOTHER_ROLE=anotherrole
+    openstack role create $ANOTHER_ROLE
 
     # invisible tenant - admin can't see this one
-    INVIS_TENANT=$(keystone tenant-create --name=invisible_to_admin | grep " id " | get_field 2)
+    INVIS_TENANT=invisible_to_admin
+    openstack project create $INVIS_TENANT
 
     # demo
-    DEMO_TENANT=$(keystone tenant-create \
-        --name=demo \
-        | grep " id " | get_field 2)
-    DEMO_USER=$(keystone user-create \
-        --name demo \
-        --pass "$ADMIN_PASSWORD" \
-        --email demo@example.com \
-        | grep " id " | get_field 2)
-    keystone user-role-add --user-id $DEMO_USER --role-id $MEMBER_ROLE --tenant-id $DEMO_TENANT
-    keystone user-role-add --user-id $ADMIN_USER --role-id $ADMIN_ROLE --tenant-id $DEMO_TENANT
-    keystone user-role-add --user-id $DEMO_USER --role-id $ANOTHER_ROLE --tenant-id $DEMO_TENANT
-    keystone user-role-add --user-id $DEMO_USER --role-id $MEMBER_ROLE --tenant-id $INVIS_TENANT
+    DEMO_TENANT=demo
+    DEMO_USER=demo
+    openstack project create $DEMO_TENANT
+    openstack user create --project $DEMO_TENANT --password "$ADMIN_PASSWORD" $DEMO_USER
+
+    openstack role add --project $DEMO_TENANT --user $DEMO_USER $MEMBER_ROLE
+    openstack role add --project $DEMO_TENANT --user $ADMIN_USER $ADMIN_ROLE
+    openstack role add --project $DEMO_TENANT --user $DEMO_USER $ANOTHER_ROLE
+    openstack role add --project $INVIS_TENANT --user $DEMO_USER $MEMBER_ROLE
 
     # Keystone
     if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
-        KEYSTONE_SERVICE=$(keystone service-create \
-            --name keystone \
-            --type identity \
-            --description "Keystone Identity Service" \
-            | grep " id " | get_field 2)
-        keystone endpoint-create \
+        KEYSTONE_SERVICE=keystone
+        openstack service create --type identity --description "Keystone Identity Service" $KEYSTONE_SERVICE
+        openstack endpoint create \
             --region RegionOne \
-            --service_id $KEYSTONE_SERVICE \
             --publicurl "$KEYSTONE_SERVICE_PROTOCOL://$KEYSTONE_SERVICE_HOST:$KEYSTONE_SERVICE_PORT/v$IDENTITY_API_VERSION" \
             --adminurl "$KEYSTONE_AUTH_PROTOCOL://$KEYSTONE_AUTH_HOST:$KEYSTONE_AUTH_PORT/v$IDENTITY_API_VERSION" \
-            --internalurl "$KEYSTONE_SERVICE_PROTOCOL://$KEYSTONE_SERVICE_HOST:$KEYSTONE_SERVICE_PORT/v$IDENTITY_API_VERSION"
+            --internalurl "$KEYSTONE_SERVICE_PROTOCOL://$KEYSTONE_SERVICE_HOST:$KEYSTONE_SERVICE_PORT/v$IDENTITY_API_VERSION" \
+            $KEYSTONE_SERVICE
     fi
 }
 
