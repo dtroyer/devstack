@@ -1,19 +1,19 @@
 # lib/ceph
-# Functions to control the configuration and operation of the **Ceph** service
+# Functions to control the configuration and operation of the **Ceph** storage service
 
 # Dependencies:
 #
 # - ``functions`` file
 # - ``CEPH_DATA_DIR`` or ``DATA_DIR`` must be defined
 
-# ``stack.sh`` calls the entry points in this order:
+# ``stack.sh`` calls the entry points in this order (via ``extras.d/60-ceph.sh``):
 #
-# - install_storage_ceph
-# - configure_storage_ceph
-# - init_storage_ceph
-# - start_storage_ceph
-# - stop_storage_ceph
-# - cleanup_storage_ceph
+# - install_ceph
+# - configure_ceph
+# - init_ceph
+# - start_ceph
+# - stop_ceph
+# - cleanup_ceph
 
 # Save trace setting
 XTRACE=$(set +o | grep xtrace)
@@ -25,12 +25,15 @@ set +o xtrace
 
 # Set ``CEPH_DATA_DIR`` to the location of Ceph drives and objects.
 # Default is the common DevStack data directory.
+# NOTE(dtroyer): CEPH_DATA_DIR can not apparently be changed?  The default
+#                should be $DATA_DIR/ceph, if it can't be changed it should
+#                not appear to be changeable.
 CEPH_DATA_DIR=${CEPH_DATA_DIR:-/var/lib/ceph}
 CEPH_DISK_IMAGE=${CEPH_DATA_DIR}/drives/images/ceph.img
 
 # Set ``CEPH_CONF_DIR`` to the location of the configuration files.
 # Default is ``/etc/ceph``.
-CEPH_CONF_DIR=${CEPH_CONF_DIR:-${CEPH_CONF_DIR:-/etc/ceph}}
+CEPH_CONF_DIR=${CEPH_CONF_DIR:-/etc/ceph}
 
 # DevStack will create a loop-back disk formatted as XFS to store the
 # Ceph data. Set ``CEPH_LOOPBACK_DISK_SIZE`` to the disk size in
@@ -49,21 +52,17 @@ GLANCE_CEPH_POOL=${GLANCE_CEPH_POOL:-images}
 GLANCE_CEPH_POOL_PG=${GLANCE_CEPH_POOL_PG:-8}
 GLANCE_CEPH_POOL_PGP=${GLANCE_CEPH_POOL_PGP:-8}
 
+# Nova
+NOVA_CEPH_POOL=${NOVA_CEPH_POOL:-vms}
+NOVA_CEPH_POOL_PG=${NOVA_CEPH_POOL_PG:-8}
+NOVA_CEPH_POOL_PGP=${NOVA_CEPH_POOL_PGP:-8}
+
 # Cinder
 CINDER_CEPH_POOL=${CINDER_CEPH_POOL:-volumes}
 CINDER_CEPH_POOL_PG=${CINDER_CEPH_POOL_PG:-8}
 CINDER_CEPH_POOL_PGP=${CINDER_CEPH_POOL_PGP:-8}
 CINDER_CEPH_USER=${CINDER_CEPH_USER:-cinder}
 CINDER_CEPH_UUID=${CINDER_CEPH_UUID:-$(uuidgen)}
-CINDER_BAK_CEPH_POOL=${CINDER_BAK_CEPH_POOL:-backups}
-CINDER_BAK_CEPH_POOL_PG=${CINDER_BAK_CEPH_POOL_PG:-8}
-CINDER_BAK_CEPH_POOL_PGP=${CINDER_BAK_CEPH_POOL_PGP:-8}
-CINDER_BAK_CEPH_USER=${CINDER_BAK_CEPH_USER:-cinder-bak}
-
-# Nova
-NOVA_CEPH_POOL=${NOVA_CEPH_POOL:-vms}
-NOVA_CEPH_POOL_PG=${NOVA_CEPH_POOL_PG:-8}
-NOVA_CEPH_POOL_PGP=${NOVA_CEPH_POOL_PGP:-8}
 
 # Set ``CEPH_REPLICAS`` to configure how many replicas are to be
 # configured for your Ceph cluster. By default we are configuring
@@ -75,9 +74,42 @@ CEPH_REPLICAS_SEQ=$(seq ${CEPH_REPLICAS})
 # Functions
 # ------------
 
-# import_libvirt_secret_storage_ceph() - Imports Cinder user key into libvirt
+# create_xfs_disk - Create XFS-formatted backing disk
+function create_xfs_disk {
+    local node_number
+    local disk_image=${1}
+    local storage_data_dir=${2}
+    local loopback_disk_size=${3}
+
+    # Create a loopback disk and format it to XFS.
+    if [[ -e ${disk_image} ]]; then
+        if egrep -q ${storage_data_dir} /proc/mounts; then
+            sudo umount ${storage_data_dir}/drives/sdb1
+            sudo rm -f ${disk_image}
+        fi
+    fi
+
+    sudo mkdir -p ${storage_data_dir}/drives/images
+
+    sudo truncate -s ${loopback_disk_size} ${disk_image}
+
+    # Make a fresh XFS filesystem. Use bigger inodes so xattr can fit in
+    # a single inode. Keeping the default inode size (256) will result in multiple
+    # inodes being used to store xattr. Retrieving the xattr will be slower
+    # since we have to read multiple inodes. This statement is true for both
+    # Swift and Ceph.
+    sudo mkfs.xfs -f -i size=1024 ${disk_image}
+
+    # Mount the disk with mount options to make it as efficient as possible
+    if ! egrep -q ${storage_data_dir} /proc/mounts; then
+        sudo mount -t xfs -o loop,noatime,nodiratime,nobarrier,logbufs=8  \
+            ${disk_image} ${storage_data_dir}
+    fi
+}
+
+# import_libvirt_secret_ceph() - Imports Cinder user key into libvirt
 # so it can connect to the Ceph cluster while attaching a Cinder block device
-function import_libvirt_secret_storage_ceph {
+function import_libvirt_secret_ceph {
     cat > secret.xml <<EOF
 <secret ephemeral='no' private='no'>
    <uuid>${CINDER_CEPH_UUID}</uuid>
@@ -91,9 +123,9 @@ EOF
     sudo rm -f secret.xml
 }
 
-# cleanup_storage_ceph() - Remove residual data files, anything left over from previous
+# cleanup_ceph() - Remove residual data files, anything left over from previous
 # runs that a clean run would need to clean up
-function cleanup_storage_ceph {
+function cleanup_ceph {
     sudo pkill -f ceph-mon
     sudo pkill -f ceph-osd
     sudo rm -rf ${CEPH_DATA_DIR}/*/*
@@ -107,13 +139,15 @@ function cleanup_storage_ceph {
     if [[ -e ${CEPH_DISK_IMAGE} ]]; then
         sudo rm -f ${CEPH_DISK_IMAGE}
     fi
+    # NOTE(dtroyer): I'm not sure we need to remove these unless re-install
+    #                cleans up things otherwise getting in the way
     uninstall_package ceph ceph-fuse libcephfs1 python-ceph > /dev/null 2>&1
 }
 
-# configure_storage_ceph() - Set config files, create data dirs, etc
-function configure_storage_ceph {
+# configure_ceph() - Set config files, create data dirs, etc
+function configure_ceph {
     # create a backing file disk
-    create_disk ${CEPH_DISK_IMAGE} ${CEPH_DATA_DIR} ${CEPH_LOOPBACK_DISK_SIZE}
+    create_xfs_disk ${CEPH_DISK_IMAGE} ${CEPH_DATA_DIR} ${CEPH_LOOPBACK_DISK_SIZE}
 
     # populate ceph directory
     sudo mkdir -p ${CEPH_DATA_DIR}/{bootstrap-mds,bootstrap-osd,mds,mon,osd,tmp}
@@ -182,74 +216,68 @@ EOF
             sudo touch ${CEPH_DATA_DIR}/osd/ceph-${OSD_ID}/sysvinit
         fi
     done
-
-    # configure Glance service options, ceph pool, ceph user and ceph key
-    if is_service_enabled glance; then
-        sudo ceph -c ${CEPH_CONF_FILE} osd pool create ${GLANCE_CEPH_POOL} ${GLANCE_CEPH_POOL_PG} ${GLANCE_CEPH_POOL_PGP}
-        sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${GLANCE_CEPH_POOL} size ${CEPH_REPLICAS}
-        if [[ $CEPH_REPLICAS -ne 1 ]]; then
-            sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${GLANCE_CEPH_POOL} crush_ruleset ${RULE_ID}
-        fi
-        sudo ceph -c ${CEPH_CONF_FILE} auth get-or-create client.${GLANCE_CEPH_USER} mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=${GLANCE_CEPH_POOL}" | sudo tee ${CEPH_CONF_DIR}/ceph.client.${GLANCE_CEPH_USER}.keyring
-        sudo chown $(whoami):$(whoami) ${CEPH_CONF_DIR}/ceph.client.${GLANCE_CEPH_USER}.keyring
-        iniset $GLANCE_API_CONF DEFAULT default_store rbd
-        iniset $GLANCE_API_CONF DEFAULT rbd_store_ceph_conf $CEPH_CONF_FILE
-        iniset $GLANCE_API_CONF DEFAULT rbd_store_user $GLANCE_CEPH_USER
-        iniset $GLANCE_API_CONF DEFAULT rbd_store_pool $GLANCE_CEPH_POOL
-        iniset $GLANCE_API_CONF DEFAULT show_image_direct_url True
-    fi
-
-    # configure Cinder service options, ceph pool, ceph user and ceph key
-    if is_service_enabled cinder; then
-        sudo ceph -c ${CEPH_CONF_FILE} osd pool create ${CINDER_CEPH_POOL} ${CINDER_CEPH_POOL_PG} ${CINDER_CEPH_POOL_PGP}
-        sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${CINDER_CEPH_POOL} size ${CEPH_REPLICAS}
-        if [[ $CEPH_REPLICAS -ne 1 ]]; then
-            sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${CINDER_CEPH_POOL} crush_ruleset ${RULE_ID}
-
-        fi
-        sudo ceph -c ${CEPH_CONF_FILE} auth get-or-create client.${CINDER_CEPH_USER} mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=${CINDER_CEPH_POOL}, allow rwx pool=${NOVA_CEPH_POOL},allow rx pool=${GLANCE_CEPH_POOL}" | sudo tee ${CEPH_CONF_DIR}/ceph.client.${CINDER_CEPH_USER}.keyring
-        sudo chown $(whoami):$(whoami) ${CEPH_CONF_DIR}/ceph.client.${CINDER_CEPH_USER}.keyring
-    fi
-
-    # configure Cinder backup service options, ceph pool, ceph user and ceph key
-    if is_service_enabled c-bak; then
-        sudo ceph -c ${CEPH_CONF_FILE} osd pool create ${CINDER_BAK_CEPH_POOL} ${CINDER_BAK_CEPH_POOL_PG} ${CINDER_BAK_CEPH_POOL_PGP}
-        sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${CINDER_BAK_CEPH_POOL} size ${CEPH_REPLICAS}
-        if [[ $CEPH_REPLICAS -ne 1 ]]; then
-            sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${CINDER_BAK_CEPH_POOL} crush_ruleset ${RULE_ID}
-        fi
-        sudo ceph -c ${CEPH_CONF_FILE} auth get-or-create client.${CINDER_BAK_CEPH_USER} mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=${CINDER_BAK_CEPH_POOL}" | sudo tee ${CEPH_CONF_DIR}/ceph.client.${CINDER_BAK_CEPH_USER}.keyring
-        sudo chown $(whoami):$(whoami) ${CEPH_CONF_DIR}/ceph.client.${CINDER_BAK_CEPH_USER}.keyring
-    fi
-
-    # configure Nova service options, ceph pool, ceph user and ceph key
-    if is_service_enabled nova; then
-        sudo ceph -c ${CEPH_CONF_FILE} osd pool create ${NOVA_CEPH_POOL} ${NOVA_CEPH_POOL_PG} ${NOVA_CEPH_POOL_PGP}
-        sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${NOVA_CEPH_POOL} size ${CEPH_REPLICAS}
-        if [[ $CEPH_REPLICAS -ne 1 ]]; then
-            sudo -c ${CEPH_CONF_FILE} ceph osd pool set ${NOVA_CEPH_POOL} crush_ruleset ${RULE_ID}
-        fi
-        iniset $NOVA_CONF libvirt rbd_user ${CINDER_CEPH_USER}
-        iniset $NOVA_CONF libvirt rbd_secret_uuid ${CINDER_CEPH_UUID}
-        iniset $NOVA_CONF libvirt inject_key false
-        iniset $NOVA_CONF libvirt inject_partition -2
-        iniset $NOVA_CONF libvirt disk_cachemodes "network=writeback"
-        iniset $NOVA_CONF libvirt images_type rbd
-        iniset $NOVA_CONF libvirt images_rbd_pool ${NOVA_CEPH_POOL}
-        iniset $NOVA_CONF libvirt images_rbd_ceph_conf ${CEPH_CONF_FILE}
-    fi
 }
 
-# init_storage_ceph() - Initialize databases, etc.
-function init_storage_ceph {
+# configure_ceph_glance() - Glance config needs to come after Glance is set up
+function configure_ceph_glance {
+    # configure Glance service options, ceph pool, ceph user and ceph key
+    sudo ceph -c ${CEPH_CONF_FILE} osd pool create ${GLANCE_CEPH_POOL} ${GLANCE_CEPH_POOL_PG} ${GLANCE_CEPH_POOL_PGP}
+    sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${GLANCE_CEPH_POOL} size ${CEPH_REPLICAS}
+    if [[ $CEPH_REPLICAS -ne 1 ]]; then
+        sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${GLANCE_CEPH_POOL} crush_ruleset ${RULE_ID}
+    fi
+    sudo ceph -c ${CEPH_CONF_FILE} auth get-or-create client.${GLANCE_CEPH_USER} mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=${GLANCE_CEPH_POOL}" | sudo tee ${CEPH_CONF_DIR}/ceph.client.${GLANCE_CEPH_USER}.keyring
+    sudo chown $(whoami):$(whoami) ${CEPH_CONF_DIR}/ceph.client.${GLANCE_CEPH_USER}.keyring
+    iniset $GLANCE_API_CONF DEFAULT default_store rbd
+    iniset $GLANCE_API_CONF DEFAULT rbd_store_ceph_conf $CEPH_CONF_FILE
+    iniset $GLANCE_API_CONF DEFAULT rbd_store_user $GLANCE_CEPH_USER
+    iniset $GLANCE_API_CONF DEFAULT rbd_store_pool $GLANCE_CEPH_POOL
+    iniset $GLANCE_API_CONF DEFAULT show_image_direct_url True
+}
+
+# configure_ceph_nova() - Nova config needs to come after Nova is set up
+function configure_ceph_nova {
+    # configure Nova service options, ceph pool, ceph user and ceph key
+    sudo ceph -c ${CEPH_CONF_FILE} osd pool create ${NOVA_CEPH_POOL} ${NOVA_CEPH_POOL_PG} ${NOVA_CEPH_POOL_PGP}
+    sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${NOVA_CEPH_POOL} size ${CEPH_REPLICAS}
+    if [[ $CEPH_REPLICAS -ne 1 ]]; then
+        sudo -c ${CEPH_CONF_FILE} ceph osd pool set ${NOVA_CEPH_POOL} crush_ruleset ${RULE_ID}
+    fi
+    iniset $NOVA_CONF libvirt rbd_user ${CINDER_CEPH_USER}
+    iniset $NOVA_CONF libvirt rbd_secret_uuid ${CINDER_CEPH_UUID}
+    iniset $NOVA_CONF libvirt inject_key false
+    iniset $NOVA_CONF libvirt inject_partition -2
+    iniset $NOVA_CONF libvirt disk_cachemodes "network=writeback"
+    iniset $NOVA_CONF libvirt images_type rbd
+    iniset $NOVA_CONF libvirt images_rbd_pool ${NOVA_CEPH_POOL}
+    iniset $NOVA_CONF libvirt images_rbd_ceph_conf ${CEPH_CONF_FILE}
+}
+
+# configure_ceph_cinder() - Cinder config needs to come after Cinder is set up
+function configure_ceph_cinder {
+    # Configure Cinder service options, ceph pool, ceph user and ceph key
+    sudo ceph -c ${CEPH_CONF_FILE} osd pool create ${CINDER_CEPH_POOL} ${CINDER_CEPH_POOL_PG} ${CINDER_CEPH_POOL_PGP}
+    sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${CINDER_CEPH_POOL} size ${CEPH_REPLICAS}
+    if [[ $CEPH_REPLICAS -ne 1 ]]; then
+        sudo ceph -c ${CEPH_CONF_FILE} osd pool set ${CINDER_CEPH_POOL} crush_ruleset ${RULE_ID}
+
+    fi
+    sudo ceph -c ${CEPH_CONF_FILE} auth get-or-create client.${CINDER_CEPH_USER} mon "allow r" osd "allow class-read object_prefix rbd_children, allow rwx pool=${CINDER_CEPH_POOL}, allow rwx pool=${NOVA_CEPH_POOL},allow rx pool=${GLANCE_CEPH_POOL}" | sudo tee ${CEPH_CONF_DIR}/ceph.client.${CINDER_CEPH_USER}.keyring
+    sudo chown $(whoami):$(whoami) ${CEPH_CONF_DIR}/ceph.client.${CINDER_CEPH_USER}.keyring
+}
+
+# init_ceph() - Initialize databases, etc.
+function init_ceph {
     # clean up from previous (possibly aborted) runs
     # make sure to kill all ceph processes first
     sudo pkill -f ceph-mon || true
     sudo pkill -f ceph-osd || true
 }
 
-# install_storage_ceph() - Collect source and prepare
-function install_storage_ceph {
+# install_ceph() - Collect source and prepare
+function install_ceph {
+    # NOTE(dtroyer): At some point it'll be easier to test for unsupported distros,
+    #                leveraging the list in stack.sh
     if [[ ${os_CODENAME} =~ trusty ]] || [[ ${os_CODENAME} =~ Schrödinger’sCat ]] || [[ ${os_CODENAME} =~ Heisenbug ]]; then
         NO_UPDATE_REPOS=False
         install_package ceph
@@ -258,8 +286,8 @@ function install_storage_ceph {
     fi
 }
 
-# start_storage_ceph() - Start running processes, including screen
-function start_storage_ceph {
+# start_ceph() - Start running processes, including screen
+function start_ceph {
     if is_ubuntu; then
         sudo initctl emit ceph-mon id=$(hostname)
         for id in $(sudo ceph -c ${CEPH_CONF_FILE} osd ls); do
@@ -270,15 +298,16 @@ function start_storage_ceph {
     fi
 }
 
-# stop_storage_ceph() - Stop running processes (non-screen)
-function stop_storage_ceph {
+# stop_ceph() - Stop running processes (non-screen)
+function stop_ceph {
     if is_ubuntu; then
-    sudo service ceph-mon-all stop > /dev/null 2>&1
-    sudo service ceph-osd-all stop > /dev/null 2>&1
+        sudo service ceph-mon-all stop > /dev/null 2>&1
+        sudo service ceph-osd-all stop > /dev/null 2>&1
     else
         sudo service ceph stop > /dev/null 2>&1
     fi
 }
+
 
 # Restore xtrace
 $XTRACE

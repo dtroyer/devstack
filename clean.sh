@@ -34,14 +34,10 @@ GetDistro
 source $TOP_DIR/lib/apache
 source $TOP_DIR/lib/ldap
 
-# Import database libraries
+# Import database library
 source $TOP_DIR/lib/database
 source $TOP_DIR/lib/rpc_backend
 
-# Import storage libraries
-source $TOP_DIR/lib/storage
-
-# Get project function libraries
 source $TOP_DIR/lib/tls
 
 source $TOP_DIR/lib/oslo
