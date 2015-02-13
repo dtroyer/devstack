@@ -108,7 +108,7 @@ if is_service_enabled glance; then
     stop_glance
 fi
 
-if is_service_enabled key; then
+if is_service_enabled keystone; then
     stop_keystone
 fi
 

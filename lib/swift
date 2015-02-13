@@ -392,7 +392,7 @@ function configure_swift {
         swift_pipeline+=" swift3 s3token "
     fi
 
-    if is_service_enabled key;then
+    if is_service_enabled keystone; then
         swift_pipeline+=" authtoken keystoneauth"
     fi
     swift_pipeline+=" tempauth "
@@ -476,7 +476,7 @@ EOF
     iniset ${testfile} func_test account2 swifttenanttest2
     iniset ${testfile} func_test username2 swiftusertest2
 
-    if is_service_enabled key;then
+    if is_service_enabled keystone; then
         iniuncomment ${testfile} func_test auth_version
         iniset ${testfile} func_test auth_host ${KEYSTONE_SERVICE_HOST}
         iniset ${testfile} func_test auth_port ${KEYSTONE_AUTH_PORT}
