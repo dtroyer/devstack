@@ -712,11 +712,26 @@ fi
 source $TOP_DIR/tools/fixup_stuff.sh
 
 
+# Virtual Environment
+# -------------------
+
+# Temporary hack for testing
+# This belongs in d-g functions.sh setup_host() or devstack-vm-gate.sh
+#if [[ -d /var/cache/pip ]]; then
+#    sudo chown -R $STACK_USER:$STACK_USER /var/cache/pip
+#fi
+
+# Pre-build some problematic wheels
+if [[ ! -d ${WHEELHOUSE:-} ]]; then
+    source $TOP_DIR/tools/build_wheels.sh
+fi
+
+
 # Extras Pre-install
 # ------------------
 
 # Phase: pre-install
-if [[ -d $TOP_DIR/extras.d ]]; then
+if [[ -n ${WHEELHOUSE:-} && -d $TOP_DIR/extras.d ]]; then
     for i in $TOP_DIR/extras.d/*.sh; do
         [[ -r $i ]] && source $i stack pre-install
     done
