@@ -446,6 +446,17 @@ repos in order to get the current branch from ``$GIT_BASE``.
 
         RECLONE=yes
 
+Use an additional repository for pip
+------------------------------------
+
+``pip install`` accepts an option ``--index-url`` that allows an additional
+repository to be consulted when installing packages.  Set ``PIP_INDEX`` to
+the URL of the additional repository.
+
+    ::
+
+        PIP_INDEX=https://pybox.example.com/python 
+
 Upgrade packages installed by pip
 ---------------------------------
 

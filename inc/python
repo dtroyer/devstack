@@ -218,13 +218,14 @@ function disable_python3_package {
 
 # Wrapper for ``pip install`` to set cache and proxy environment variables
 # Uses globals ``OFFLINE``, ``PIP_VIRTUAL_ENV``,
-# ``PIP_UPGRADE``, ``TRACK_DEPENDS``, ``*_proxy``,
+# ``PIP_INDEX``, ``PIP_UPGRADE``, ``TRACK_DEPENDS``, ``*_proxy``,
 # Usage:
 #  pip_install pip_arguments
 function pip_install {
     local xtrace result
     xtrace=$(set +o | grep xtrace)
     set +o xtrace
+    local pip_index=""
     local upgrade=""
     local offline=${OFFLINE:-False}
     if [[ "$offline" == "True" || -z "$@" ]]; then
@@ -233,6 +234,11 @@ function pip_install {
     fi
 
     time_start "pip_install"
+
+    if [[ -n $PIP_INDEX ]]; then
+        # Also consult this repository
+        pip_index="--index $PIP_INDEX"
+    fi
 
     PIP_UPGRADE=$(trueorfalse False PIP_UPGRADE)
     if [[ "$PIP_UPGRADE" = "True" ]] ; then
@@ -357,7 +363,7 @@ function pip_install {
         no_proxy="${no_proxy:-}" \
         PIP_FIND_LINKS=$PIP_FIND_LINKS \
         SETUPTOOLS_SYS_PATH_TECHNIQUE=rewrite \
-        $cmd_pip $upgrade $install_test_reqs \
+        $cmd_pip $pip_index $upgrade $install_test_reqs \
         $@
     result=$?
 

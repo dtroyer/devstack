@@ -67,15 +67,14 @@ git clone https://git.openstack.org/openstack/neutron.git -b stable/pike /opt/st
 sed -i -e 's/\/usr\/sbin\/dnsmasq/\/usr\/bin\/dnsmasq/g' neutron/etc/neutron/rootwrap.d/dhcp.filters
 sed -i -e 's/\/sbin\/dnsmasq/\/usr\/bin\/dnsmasq/g' neutron/etc/neutron/rootwrap.d/dhcp.filters
 
-if [ "$1" != "" ]; then
-	# Let's add PIP_INDEX support to deal with this...it may even be useful upstream
-    sed -i -e 's/\$cmd_pip install/\$cmd_pip install -i https:\/\/$1/g' inc/python
-fi
-
 # Set up a default configuration
 cp -p local.conf.example_vanilla local.conf
 echo "HOST_IP=127.0.0.1" >> local.conf
 echo "GIT_BASE=https://git.openstack.org" >> local.conf
+
+if [ "$1" != "" ]; then
+    echo "PIP_INDEX=https://$1" >>local.conf
+fi
 
 # Cover up our sins
 chown -R ${STACK_USER} ${DEST}
