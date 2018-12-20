@@ -1358,6 +1358,10 @@ function uninstall_package {
         sudo ${YUM:-yum} remove -y "$@" ||:
     elif is_suse; then
         sudo zypper remove -y "$@" ||:
+    elif is_clearlinux; then
+        # Nothing to see here
+        # Clear bundles make uninstalling individual packages hard"
+        :
     else
         exit_distro_not_supported "uninstalling packages"
     fi

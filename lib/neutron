@@ -423,7 +423,7 @@ function install_neutron_new {
     fi
 
     # L3 service requires radvd
-    if is_service_enabled neutron-l3; then
+    if is_service_enabled neutron-l3 && ! is_clearlinux; then
         install_package radvd
     fi
 
