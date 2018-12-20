@@ -49,5 +49,13 @@ function lsb_release {
     esac
 }
 
+# Clear wants dnsmasq to live in /usr/bin, inform Neutron
+
+function neutron_rootwrap_fix {
+    if is_neutron_enabled; then
+        sed -i -e 's/\/usr\/sbin\/dnsmasq/\/usr\/bin\/dnsmasq/g' $NEUTRON_CONF_DIR/rootwrap.d/dhcp.filters
+        sed -i -e 's/\/sbin\/dnsmasq/\/usr\/bin\/dnsmasq/g' $NEUTRON_CONF_DIR/rootwrap.d/dhcp.filters
+    fi
+}
 
 $_XTRACE_INC_CLEARLINUX

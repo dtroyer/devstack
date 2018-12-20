@@ -280,6 +280,11 @@ function configure_neutron_rootwrap {
     chmod 0440 $tempfile
     sudo chown root:root $tempfile
     sudo mv $tempfile /etc/sudoers.d/neutron-rootwrap
+
+    if is_clearlinux; then
+        # Fix rootwrap config for dnsmasq and maybe other things too
+        neutron_rootwrap_fix
+    fi
 }
 
 # Make Neutron-required changes to nova.conf

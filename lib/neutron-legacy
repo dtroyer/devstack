@@ -898,6 +898,11 @@ function _neutron_setup_rootwrap {
     if [[ "$Q_USE_ROOTWRAP_DAEMON" == "True" ]]; then
         iniset $NEUTRON_CONF agent root_helper_daemon "$Q_RR_DAEMON_COMMAND"
     fi
+
+    if is_clearlinux; then
+        # Fix rootwrap config for dnsmasq and maybe other things too
+        neutron_rootwrap_fix
+    fi
 }
 
 # Configures keystone integration for neutron service

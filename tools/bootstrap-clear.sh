@@ -62,11 +62,6 @@ sed -i -e 's/os-brick===1.15.6/os-brick===1.15.5/g' requirements/upper-constrain
 sed -i -e 's/docutils===0.13.1/docutils===0.14/g' requirements/upper-constraints.txt
 sed -i -e 's/cffi===1.10.0/cffi===1.11.5/g' requirements/upper-constraints.txt
 
-# This isn't going to survive any work in the neutron repo, it should be handled in the plugins
-git clone https://git.openstack.org/openstack/neutron.git -b stable/pike /opt/stack/neutron
-sed -i -e 's/\/usr\/sbin\/dnsmasq/\/usr\/bin\/dnsmasq/g' neutron/etc/neutron/rootwrap.d/dhcp.filters
-sed -i -e 's/\/sbin\/dnsmasq/\/usr\/bin\/dnsmasq/g' neutron/etc/neutron/rootwrap.d/dhcp.filters
-
 # Set up a default configuration
 cp -p local.conf.example_vanilla local.conf
 echo "HOST_IP=127.0.0.1" >> local.conf
